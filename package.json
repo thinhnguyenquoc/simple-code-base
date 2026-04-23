@@ -20,7 +20,9 @@
   },
   "homepage": "https://github.com/thinhnguyenquoc/simple-code-base#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "bcryptjs": "^3.0.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",
