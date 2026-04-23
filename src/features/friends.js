@@ -57,7 +57,7 @@ router.post('/add', (req, res) => {
     });
 });
 
-// TODD: delete bad friend
+// TODO: delete bad friend
 
 // Optional: GET /list
 // Returns a paginated list of friends for the authenticated user.
