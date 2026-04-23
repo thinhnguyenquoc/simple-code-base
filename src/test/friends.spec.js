@@ -34,7 +34,7 @@ describe('Friends Feature', () => {
 
     describe('POST /friends/add', () => {
         it('should add a friend successfully', async () => {
-            const friendUsername = 'friendUser';
+            const friendUsername = 'afriendUser';
             const response = await request(app)
                 .post('/friends/add')
                 .send({ friendUsername });
@@ -51,7 +51,7 @@ describe('Friends Feature', () => {
                 .send({}); // No friendUsername
 
             expect(response.status).toBe(400);
-            expect(response.body.message).toBe('friendUsername is required in the request body.');
+            expect(response.body.message).toBe('friendUsername is required and must be a string in the request body.');
         });
 
         it('should return 400 if trying to add self as friend', async () => {
@@ -79,13 +79,49 @@ describe('Friends Feature', () => {
             expect(response.body.friends.length).toBe(2);
         });
 
-        it('should return 400 if friendUsername does not start with 'a'', async () => {
+        it("should return 400 if friendUsername does not start with 'a'", async () => {
             const response = await request(app)
                 .post('/friends/add')
                 .send({ friendUsername: 'banana' });
 
             expect(response.status).toBe(400);
-            expect(response.body.message).toBe('Friend username must start with the letter 'a'.');
+            expect(response.body.message).toBe("Friend username must start with the letter 'a'.");
+        });
+    });
+
+    describe('POST /friends/remove', () => {
+        it('should remove an existing friend successfully', async () => {
+            // Add a friend first
+            await request(app)
+                .post('/friends/add')
+                .send({ friendUsername: 'afriend' });
+
+            // Remove the friend
+            const response = await request(app)
+                .post('/friends/remove')
+                .send({ friendUsername: 'afriend' });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toContain('Successfully removed');
+            expect(response.body.friends).toEqual([]);
+        });
+
+        it('should return 400 if friendUsername is missing', async () => {
+            const response = await request(app)
+                .post('/friends/remove')
+                .send({}); // No friendUsername
+
+            expect(response.status).toBe(400);
+            expect(response.body.message).toBe('friendUsername is required and must be a string in the request body.');
+        });
+
+        it('should return 400 if friend is not in the friends list', async () => {
+            const response = await request(app)
+                .post('/friends/remove')
+                .send({ friendUsername: 'afriend' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.message).toBe('Friend not found in your friends list.');
         });
     });
 
@@ -113,14 +149,14 @@ describe('Friends Feature', () => {
         });
 
         it('should return the first page with default limit after adding friends', async () => {
-            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+            await addFriends(['afriend1', 'afriend2', 'afriend3', 'afriend4', 'afriend5']);
 
             const response = await request(app)
                 .get('/friends/list');
 
             expect(response.status).toBe(200);
             expect(response.body.username).toBe('testUser');
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['afriend1', 'afriend2', 'afriend3', 'afriend4', 'afriend5']));
             expect(response.body.friends.length).toBe(5);
             expect(response.body.pagination).toEqual({
                 page: 1,
@@ -131,13 +167,13 @@ describe('Friends Feature', () => {
         });
 
         it('should return the first page with a custom limit', async () => {
-            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+            await addFriends(['afriend1', 'afriend2', 'afriend3', 'afriend4', 'afriend5']);
 
             const response = await request(app)
                 .get('/friends/list?limit=2');
 
             expect(response.status).toBe(200);
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friend1', 'friend2']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['afriend1', 'afriend2']));
             expect(response.body.friends.length).toBe(2);
             expect(response.body.pagination).toEqual({
                 page: 1,
@@ -148,13 +184,13 @@ describe('Friends Feature', () => {
         });
 
         it('should return the second page with a custom limit', async () => {
-            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+            await addFriends(['afriend1', 'afriend2', 'afriend3', 'afriend4', 'afriend5']);
 
             const response = await request(app)
                 .get('/friends/list?page=2&limit=2');
 
             expect(response.status).toBe(200);
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friend3', 'friend4']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['afriend3', 'afriend4']));
             expect(response.body.friends.length).toBe(2);
             expect(response.body.pagination).toEqual({
                 page: 2,
@@ -165,13 +201,13 @@ describe('Friends Feature', () => {
         });
 
         it('should return the last page with remaining friends', async () => {
-            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+            await addFriends(['afriend1', 'afriend2', 'afriend3', 'afriend4', 'afriend5']);
 
             const response = await request(app)
                 .get('/friends/list?page=3&limit=2');
 
             expect(response.status).toBe(200);
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friend5']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['afriend5']));
             expect(response.body.friends.length).toBe(1);
             expect(response.body.pagination).toEqual({
                 page: 3,
@@ -182,7 +218,7 @@ describe('Friends Feature', () => {
         });
 
         it('should return an empty array for a page out of bounds', async () => {
-            await addFriends(['friend1', 'friend2', 'friend3']);
+            await addFriends(['afriend1', 'afriend2', 'afriend3']);
 
             const response = await request(app)
                 .get('/friends/list?page=10&limit=2');

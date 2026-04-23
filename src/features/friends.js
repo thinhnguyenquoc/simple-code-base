@@ -26,9 +26,9 @@ router.post('/add', (req, res) => {
         return res.status(401).json({ message: 'Authentication required.' });
     }
 
-    if (!friendUsername) {
-        console.warn('[Friends] Add friend failed: friendUsername is required.');
-        return res.status(400).json({ message: 'friendUsername is required in the request body.' });
+    if (!friendUsername || typeof friendUsername !== 'string') {
+        console.warn('[Friends] Add friend failed: friendUsername is required and must be a string.');
+        return res.status(400).json({ message: 'friendUsername is required and must be a string in the request body.' });
     }
 
     if (currentUser.username === friendUsername) {
@@ -57,15 +57,51 @@ router.post('/add', (req, res) => {
     });
 });
 
-// TODO: delete bad friend
+// POST /remove
+// Expects { "friendUsername": "someUser" } in the request body.
+// Removes a bidirectional friendship between the authenticated user and friendUsername.
+router.post('/remove', (req, res) => {
+    const currentUser = req.user;
+    const { friendUsername } = req.body;
+    console.log(`[Friends] POST /remove request received. Current user: ${currentUser?.username}, Friend username: ${friendUsername}`);
+
+    if (!currentUser || !currentUser.username) {
+        console.warn('[Friends] Remove friend failed: Authentication required.');
+        return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    if (!friendUsername || typeof friendUsername !== 'string') {
+        console.warn('[Friends] Remove friend failed: friendUsername is required and must be a string.');
+        return res.status(400).json({ message: 'friendUsername is required and must be a string in the request body.' });
+    }
+
+    const userFriends = friendsMap.get(currentUser.username);
+    
+    if (!userFriends || !userFriends.has(friendUsername)) {
+        console.warn(`[Friends] Remove friend failed: '${friendUsername}' is not in '${currentUser.username}'s friends list.`);
+        return res.status(400).json({ message: 'Friend not found in your friends list.' });
+    }
+
+    // Remove friendship (bidirectional)
+    userFriends.delete(friendUsername);
+    if (friendsMap.has(friendUsername)) {
+        friendsMap.get(friendUsername).delete(currentUser.username);
+    }
+
+    console.log(`[Friends] Successfully removed '${friendUsername}' as a friend from '${currentUser.username}'.`);
+    res.status(200).json({
+        message: `Successfully removed ${friendUsername} as a friend.`,
+        friends: Array.from(userFriends)
+    });
+});
 
 // Optional: GET /list
 // Returns a paginated list of friends for the authenticated user.
 // Query parameters: page (default 1), limit (default 10)
 router.get('/list', (req, res) => {
     const currentUser = req.user;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
     const offset = (page - 1) * limit;
 
     console.log(`[Friends] GET /list request received for user: ${currentUser?.username}, Page: ${page}, Limit: ${limit}`);
@@ -76,6 +112,14 @@ router.get('/list', (req, res) => {
     }
 
     const allFriends = Array.from(friendsMap.get(currentUser.username) || new Set());
+    
+    // Sort friends by the last character of their username
+    allFriends.sort((a, b) => {
+        const lastCharA = a.charAt(a.length - 1);
+        const lastCharB = b.charAt(b.length - 1);
+        return lastCharA.localeCompare(lastCharB);
+    });
+
     const totalFriends = allFriends.length;
     const paginatedFriends = allFriends.slice(offset, offset + limit);
     const totalPages = Math.ceil(totalFriends / limit);

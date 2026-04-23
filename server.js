@@ -16,7 +16,7 @@ app.get('/', (req, res) => {
 
 app.use('/auth', authFeature);
 app.use('/hello', authMiddleware, helloFeature);
-app.use('/friends', authMiddleware, friendsFeature); // Added this line
+app.use('/friends', authMiddleware, friendsFeature.router);
 
 if (require.main === module) {
     app.listen(port, () => {

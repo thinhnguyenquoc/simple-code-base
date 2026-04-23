@@ -42,3 +42,7 @@ npm test
 ```
 
 This project uses **Jest** as the test runner and **Supertest** for endpoint testing. Tests are located in the `src/test/` directory.
+
+## Hello API
+
+- need return "new hello"
