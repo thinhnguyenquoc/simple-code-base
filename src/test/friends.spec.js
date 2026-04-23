@@ -24,20 +24,12 @@ describe('Friends Feature', () => {
         app = express();
         app.use(express.json());
         // Mount the friends feature with auth middleware
-        app.use('/friends', authMiddleware, friendsFeature);
-        
-        // We also need to mock the users available in auth.js if friend existence check was implemented.
-        // For now, we are not checking for friend existence, so this is fine.
+        app.use('/friends', authMiddleware, friendsFeature.router);
     });
 
     beforeEach(() => {
-        // Reset any in-memory state before each test if necessary.
-        // Since friendsMap is within friends.js and not exported, we'd need a way to reset it.
-        // A more robust approach would be to export friendsMap from friends.js or pass it as a dependency.
-        // For this example, we'll assume the state persists across tests, which might be an issue.
-        // A better solution for testing would be to have friendsMap be imported and then reset.
-        // For now, we'll proceed with the assumption of state persistence and see.
-        // If tests fail due to state, we'll need to refactor friends.js to allow state reset.
+        // Reset the in-memory state before each test
+        friendsFeature.resetFriendsMap();
     });
 
     describe('POST /friends/add', () => {
@@ -49,6 +41,7 @@ describe('Friends Feature', () => {
 
             expect(response.status).toBe(200);
             expect(response.body.message).toContain('Successfully added');
+            // For the add endpoint, it still returns all friends of the current user, not paginated
             expect(response.body.friends).toEqual([friendUsername]);
         });
 
@@ -74,46 +67,134 @@ describe('Friends Feature', () => {
             // Add first friend
             await request(app)
                 .post('/friends/add')
-                .send({ friendUsername: 'friend1' });
+                .send({ friendUsername: 'apple' }); // Starts with 'a'
 
             // Add second friend
             const response = await request(app)
                 .post('/friends/add')
-                .send({ friendUsername: 'friend2' });
+                .send({ friendUsername: 'apricot' }); // Starts with 'a'
 
             expect(response.status).toBe(200);
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friend1', 'friend2']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['apple', 'apricot']));
             expect(response.body.friends.length).toBe(2);
+        });
+
+        it('should return 400 if friendUsername does not start with 'a'', async () => {
+            const response = await request(app)
+                .post('/friends/add')
+                .send({ friendUsername: 'banana' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.message).toBe('Friend username must start with the letter 'a'.');
         });
     });
 
-    describe('GET /friends/list', () => {
-        it('should return an empty list if no friends are added', async () => {
+    describe('GET /friends/list with pagination', () => {
+        // Helper to add multiple friends
+        const addFriends = async (usernames) => {
+            for (const username of usernames) {
+                await request(app).post('/friends/add').send({ friendUsername: username });
+            }
+        };
+
+        it('should return an empty list with pagination metadata if no friends are added', async () => {
             const response = await request(app)
                 .get('/friends/list');
 
             expect(response.status).toBe(200);
             expect(response.body.username).toBe('testUser');
             expect(response.body.friends).toEqual([]);
+            expect(response.body.pagination).toEqual({
+                page: 1,
+                limit: 10,
+                totalFriends: 0,
+                totalPages: 0,
+            });
         });
 
-        it('should return the list of friends after adding them', async () => {
-            // Add friends first
-            await request(app)
-                .post('/friends/add')
-                .send({ friendUsername: 'friendA' });
-            await request(app)
-                .post('/friends/add')
-                .send({ friendUsername: 'friendB' });
+        it('should return the first page with default limit after adding friends', async () => {
+            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
 
-            // Now get the list
             const response = await request(app)
                 .get('/friends/list');
 
             expect(response.status).toBe(200);
             expect(response.body.username).toBe('testUser');
-            expect(response.body.friends).toEqual(expect.arrayContaining(['friendA', 'friendB']));
+            expect(response.body.friends).toEqual(expect.arrayContaining(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']));
+            expect(response.body.friends.length).toBe(5);
+            expect(response.body.pagination).toEqual({
+                page: 1,
+                limit: 10,
+                totalFriends: 5,
+                totalPages: 1,
+            });
+        });
+
+        it('should return the first page with a custom limit', async () => {
+            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+
+            const response = await request(app)
+                .get('/friends/list?limit=2');
+
+            expect(response.status).toBe(200);
+            expect(response.body.friends).toEqual(expect.arrayContaining(['friend1', 'friend2']));
             expect(response.body.friends.length).toBe(2);
+            expect(response.body.pagination).toEqual({
+                page: 1,
+                limit: 2,
+                totalFriends: 5,
+                totalPages: 3,
+            });
+        });
+
+        it('should return the second page with a custom limit', async () => {
+            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+
+            const response = await request(app)
+                .get('/friends/list?page=2&limit=2');
+
+            expect(response.status).toBe(200);
+            expect(response.body.friends).toEqual(expect.arrayContaining(['friend3', 'friend4']));
+            expect(response.body.friends.length).toBe(2);
+            expect(response.body.pagination).toEqual({
+                page: 2,
+                limit: 2,
+                totalFriends: 5,
+                totalPages: 3,
+            });
+        });
+
+        it('should return the last page with remaining friends', async () => {
+            await addFriends(['friend1', 'friend2', 'friend3', 'friend4', 'friend5']);
+
+            const response = await request(app)
+                .get('/friends/list?page=3&limit=2');
+
+            expect(response.status).toBe(200);
+            expect(response.body.friends).toEqual(expect.arrayContaining(['friend5']));
+            expect(response.body.friends.length).toBe(1);
+            expect(response.body.pagination).toEqual({
+                page: 3,
+                limit: 2,
+                totalFriends: 5,
+                totalPages: 3,
+            });
+        });
+
+        it('should return an empty array for a page out of bounds', async () => {
+            await addFriends(['friend1', 'friend2', 'friend3']);
+
+            const response = await request(app)
+                .get('/friends/list?page=10&limit=2');
+
+            expect(response.status).toBe(200);
+            expect(response.body.friends).toEqual([]);
+            expect(response.body.pagination).toEqual({
+                page: 10,
+                limit: 2,
+                totalFriends: 3,
+                totalPages: 2,
+            });
         });
     });
 });
