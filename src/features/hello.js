@@ -5,7 +5,7 @@ console.log('Hello feature loaded');
 
 router.get('/', (req, res) => {
   console.log('[Hello] GET / request received');
-  res.send('hello');
+  res.send('new hello');
 });
 
 module.exports = router;

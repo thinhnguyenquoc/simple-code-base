@@ -76,7 +76,7 @@ router.post('/remove', (req, res) => {
     }
 
     const userFriends = friendsMap.get(currentUser.username);
-    
+
     if (!userFriends || !userFriends.has(friendUsername)) {
         console.warn(`[Friends] Remove friend failed: '${friendUsername}' is not in '${currentUser.username}'s friends list.`);
         return res.status(400).json({ message: 'Friend not found in your friends list.' });
@@ -112,7 +112,7 @@ router.get('/list', (req, res) => {
     }
 
     const allFriends = Array.from(friendsMap.get(currentUser.username) || new Set());
-    
+
     // Sort friends by the last character of their username
     allFriends.sort((a, b) => {
         const lastCharA = a.charAt(a.length - 1);
@@ -136,6 +136,8 @@ router.get('/list', (req, res) => {
         },
     });
 });
+
+// TODO: add friend of friend
 
 
 module.exports = {
