@@ -3,6 +3,8 @@ const express = require('express');
 const app = express();
 const port = 3000;
 
+const { syncDatabase } = require('./src/models');
+
 const helloFeature = require('./src/features/hello');
 const authFeature = require('./src/features/auth');
 const authMiddleware = require('./src/middleware/auth');
@@ -19,8 +21,10 @@ app.use('/hello', authMiddleware, helloFeature);
 app.use('/friends', authMiddleware, friendsFeature.router);
 
 if (require.main === module) {
-    app.listen(port, () => {
-        console.log(`App listening on port ${port}`);
+    syncDatabase().then(() => {
+        app.listen(port, () => {
+            console.log(`App listening on port ${port}`);
+        });
     });
 }
 

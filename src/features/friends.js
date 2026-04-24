@@ -1,22 +1,13 @@
 const express = require('express');
 const router = express.Router();
-
-// In-memory store for friendships. Maps username to a Set of friend usernames.
-const friendsMap = new Map();
-
-// Helper to ensure a user exists in the friendsMap, initializing with an empty Set if not.
-const ensureUserInMap = (username) => {
-    if (!friendsMap.has(username)) {
-        friendsMap.set(username, new Set());
-    }
-};
+const { User, Friendship } = require('../models');
 
 console.log('Friends feature loaded');
 
 // POST /add
 // Expects { "friendUsername": "someUser" } in the request body.
 // Adds a bidirectional friendship between the authenticated user and friendUsername.
-router.post('/add', (req, res) => {
+router.post('/add', async (req, res) => {
     const currentUser = req.user;
     const { friendUsername } = req.body;
     console.log(`[Friends] POST /add request received. Current user: ${currentUser?.username}, Friend username: ${friendUsername}`);
@@ -36,31 +27,44 @@ router.post('/add', (req, res) => {
         return res.status(400).json({ message: 'Cannot add yourself as a friend.' });
     }
 
-    // For simplicity, we assume friendUsername is valid. In a real app, you'd check against a user list.
+    try {
+        const friend = await User.findOne({ where: { username: friendUsername } });
+        if (!friend) {
+            console.warn(`[Friends] Add friend failed: Friend username '${friendUsername}' does not exist.`);
+            return res.status(400).json({ message: 'Friend username does not exist.' });
+        }
 
-    if (!friendUsername.toLowerCase().startsWith('a')) {
-        console.warn(`[Friends] Add friend failed: Friend username '${friendUsername}' does not start with 'a'.`);
-        return res.status(400).json({ message: 'Friend username must start with the letter \'a\'.' });
+        if (!friendUsername.toLowerCase().startsWith('a')) {
+            console.warn(`[Friends] Add friend failed: Friend username '${friendUsername}' does not start with 'a'.`);
+            return res.status(400).json({ message: 'Friend username must start with the letter \'a\'.' });
+        }
+
+        // Check if friendship already exists
+        const existingFriendship1 = await Friendship.findOne({ where: { userId: currentUser.id, friendId: friend.id } });
+        const existingFriendship2 = await Friendship.findOne({ where: { userId: friend.id, friendId: currentUser.id } });
+        if (existingFriendship1 || existingFriendship2) {
+            console.warn(`[Friends] Add friend failed: Friendship already exists between '${currentUser.username}' and '${friendUsername}'.`);
+            return res.status(400).json({ message: 'Friendship already exists.' });
+        }
+
+        // Add bidirectional friendship
+        await Friendship.create({ userId: currentUser.id, friendId: friend.id });
+        await Friendship.create({ userId: friend.id, friendId: currentUser.id });
+
+        console.log(`[Friends] Successfully added '${friendUsername}' as a friend to '${currentUser.username}'.`);
+        res.status(200).json({
+            message: `Successfully added ${friendUsername} as a friend to ${currentUser.username}.`
+        });
+    } catch (error) {
+        console.error('[Friends] Error adding friend:', error.message);
+        res.status(500).json({ message: 'Error adding friend' });
     }
-
-    ensureUserInMap(currentUser.username);
-    ensureUserInMap(friendUsername);
-
-    // Add friendship (bidirectional)
-    friendsMap.get(currentUser.username).add(friendUsername);
-    friendsMap.get(friendUsername).add(currentUser.username);
-
-    console.log(`[Friends] Successfully added '${friendUsername}' as a friend to '${currentUser.username}'.`);
-    res.status(200).json({
-        message: `Successfully added ${friendUsername} as a friend to ${currentUser.username}.`,
-        friends: Array.from(friendsMap.get(currentUser.username))
-    });
 });
 
 // POST /remove
 // Expects { "friendUsername": "someUser" } in the request body.
 // Removes a bidirectional friendship between the authenticated user and friendUsername.
-router.post('/remove', (req, res) => {
+router.post('/remove', async (req, res) => {
     const currentUser = req.user;
     const { friendUsername } = req.body;
     console.log(`[Friends] POST /remove request received. Current user: ${currentUser?.username}, Friend username: ${friendUsername}`);
@@ -75,30 +79,31 @@ router.post('/remove', (req, res) => {
         return res.status(400).json({ message: 'friendUsername is required and must be a string in the request body.' });
     }
 
-    const userFriends = friendsMap.get(currentUser.username);
+    try {
+        const friend = await User.findOne({ where: { username: friendUsername } });
+        if (!friend) {
+            console.warn(`[Friends] Remove friend failed: Friend username '${friendUsername}' does not exist.`);
+            return res.status(400).json({ message: 'Friend username does not exist.' });
+        }
 
-    if (!userFriends || !userFriends.has(friendUsername)) {
-        console.warn(`[Friends] Remove friend failed: '${friendUsername}' is not in '${currentUser.username}'s friends list.`);
-        return res.status(400).json({ message: 'Friend not found in your friends list.' });
+        // Remove bidirectional friendship
+        await Friendship.destroy({ where: { userId: currentUser.id, friendId: friend.id } });
+        await Friendship.destroy({ where: { userId: friend.id, friendId: currentUser.id } });
+
+        console.log(`[Friends] Successfully removed '${friendUsername}' as a friend from '${currentUser.username}'.`);
+        res.status(200).json({
+            message: `Successfully removed ${friendUsername} as a friend.`
+        });
+    } catch (error) {
+        console.error('[Friends] Error removing friend:', error.message);
+        res.status(500).json({ message: 'Error removing friend' });
     }
-
-    // Remove friendship (bidirectional)
-    userFriends.delete(friendUsername);
-    if (friendsMap.has(friendUsername)) {
-        friendsMap.get(friendUsername).delete(currentUser.username);
-    }
-
-    console.log(`[Friends] Successfully removed '${friendUsername}' as a friend from '${currentUser.username}'.`);
-    res.status(200).json({
-        message: `Successfully removed ${friendUsername} as a friend.`,
-        friends: Array.from(userFriends)
-    });
 });
 
-// Optional: GET /list
+// GET /list
 // Returns a paginated list of friends for the authenticated user.
 // Query parameters: page (default 1), limit (default 10)
-router.get('/list', (req, res) => {
+router.get('/list', async (req, res) => {
     const currentUser = req.user;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, parseInt(req.query.limit) || 10);
@@ -111,38 +116,38 @@ router.get('/list', (req, res) => {
         return res.status(401).json({ message: 'Authentication required.' });
     }
 
-    const allFriends = Array.from(friendsMap.get(currentUser.username) || new Set());
-
-    // Sort friends by the last character of their username
-    allFriends.sort((a, b) => {
-        const lastCharA = a.charAt(a.length - 1);
-        const lastCharB = b.charAt(b.length - 1);
-        return lastCharA.localeCompare(lastCharB);
-    });
-
-    const totalFriends = allFriends.length;
-    const paginatedFriends = allFriends.slice(offset, offset + limit);
-    const totalPages = Math.ceil(totalFriends / limit);
-
-    console.log(`[Friends] Returning ${paginatedFriends.length} friends (page ${page} of ${totalPages}) for user '${currentUser.username}'. Total friends: ${totalFriends}.`);
-    res.status(200).json({
-        username: currentUser.username,
-        friends: paginatedFriends,
-        pagination: {
-            page,
+    try {
+        const friendships = await Friendship.findAll({
+            where: { userId: currentUser.id },
+            include: [{ model: User, as: 'friend', attributes: ['username'] }],
             limit,
-            totalFriends,
-            totalPages,
-        },
-    });
+            offset,
+            order: [['friend', 'username', 'ASC']],
+        });
+
+        const friends = friendships.map(f => f.friend.username);
+        const totalFriends = await Friendship.count({ where: { userId: currentUser.id } });
+        const totalPages = Math.ceil(totalFriends / limit);
+
+        console.log(`[Friends] Returning ${friends.length} friends (page ${page} of ${totalPages}) for user '${currentUser.username}'. Total friends: ${totalFriends}.`);
+        res.status(200).json({
+            username: currentUser.username,
+            friends,
+            pagination: {
+                page,
+                limit,
+                totalFriends,
+                totalPages,
+            },
+        });
+    } catch (error) {
+        console.error('[Friends] Error listing friends:', error.message);
+        res.status(500).json({ message: 'Error listing friends' });
+    }
 });
 
 // TODO: add friend of friend
 
-
 module.exports = {
     router,
-    resetFriendsMap: () => {
-        friendsMap.clear();
-    }
 };
